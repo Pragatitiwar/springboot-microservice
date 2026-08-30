@@ -1,34 +1,155 @@
 # Spring Boot Microservices
 
-A hands-on backend microservices project built with **Java, Spring Boot, Kafka, Docker, and Kubernetes**.
+A hands-on backend microservices project built with **Java, Spring Boot, Kafka, Docker, Kubernetes, and Keycloak**.
 
-The project is being developed incrementally to practice and demonstrate modern backend engineering concepts, including **REST APIs, database integration, event-driven communication, containerization, Kubernetes deployment, monitoring, and alerting**.
+The project is being developed incrementally to practice and demonstrate modern backend engineering concepts, including **REST APIs, database integration, synchronous and event-driven communication, API Gateway, authentication and authorization, containerization, Kubernetes deployment, monitoring, and alerting**.
 
 ## Architecture
 
 ```text
-                         Spring Boot Microservices
-                                  │
-                 ┌────────────────┴────────────────┐
-                 │                                 │
-          Product Service                    Order Service
-                 │                                 │
-              MySQL                             Kafka
-                 │                                 │
-                 └────────────────┬────────────────┘
-                                  │
-                             Kubernetes
-                                  │
-                    ┌─────────────┴─────────────┐
-                    │                           │
-               Prometheus                   Grafana
-                    │                           │
-                    └─────────────┬─────────────┘
-                                  │
-                              Alerting
+                              Client
+                                │
+                                │ JWT
+                                ▼
+                         ┌──────────────┐
+                         │   Keycloak   │
+                         │ Authentication│
+                         └──────┬───────┘
+                                │
+                                ▼
+                         ┌──────────────┐
+                         │ API Gateway  │
+                         │    :8080     │
+                         └──────┬───────┘
+                                │
+                    ┌───────────┴───────────┐
+                    │                       │
+                    ▼                       ▼
+             Product Service          Order Service
+                  :8081                    :8082
+                    │                       │
+                    ▼                       │
+                  MySQL                     │
+                                            │
+                              ┌─────────────┘
+                              │
+                              │ REST
+                              ▼
+                       Product Service
+
+                         Order Service
+                              │
+                              │ Kafka Events
+                              ▼
+                            Kafka
+
+                         Kubernetes
+                              │
+                    ┌─────────┴─────────┐
+                    │                   │
+               Prometheus           Grafana
+                    │                   │
+                    └─────────┬─────────┘
+                              │
+                           Alerting
 ```
 
 ## Components
+
+### API Gateway
+
+Spring Cloud Gateway is used as the single entry point for external API requests.
+
+* Centralized request routing
+* Product Service routing
+* Order Service routing
+* JWT authentication
+* Role-based authorization
+* WebFlux-based reactive gateway
+* Acts as an OAuth2 Resource Server
+
+Example routing:
+
+```text
+Client
+  │
+  ▼
+API Gateway :8080
+  │
+  ├── /products/** → Product Service :8081
+  │
+  └── /orders/**   → Order Service :8082
+```
+
+### Authentication & Authorization
+
+The project uses **Keycloak** as the Identity Provider.
+
+Keycloak is responsible for:
+
+* User authentication
+* JWT access-token issuance
+* Role management
+
+The API Gateway validates JWT access tokens before forwarding requests.
+
+Current roles:
+
+```text
+USER
+ADMIN
+```
+
+Keycloak roles are mapped to Spring Security authorities.
+
+Example:
+
+```text
+Keycloak
+   │
+   │ realm_access.roles
+   ▼
+["USER"]
+   │
+   ▼
+ROLE_USER
+```
+
+Role-based authorization is implemented at the Gateway.
+
+For example:
+
+```text
+GET /products/**
+    USER  → Allowed
+    ADMIN → Allowed
+
+DELETE /products/**
+    USER  → 403 Forbidden
+    ADMIN → Allowed
+```
+
+Authentication and authorization behavior:
+
+```text
+No / invalid JWT
+       │
+       ▼
+401 Unauthorized
+
+Valid JWT
+    │
+    ▼
+Insufficient role
+    │
+    ▼
+403 Forbidden
+
+Valid JWT + required role
+    │
+    ▼
+Request forwarded
+```
 
 ### Product Service
 
@@ -44,18 +165,62 @@ The project is being developed incrementally to practice and demonstrate modern 
 
 * Spring Boot REST API
 * Order creation and management
+* Synchronous communication with Product Service
 * Kafka-based event communication
 * MySQL database integration
 * Spring Boot Actuator
 * Prometheus metrics
 
+### Service-to-Service Communication
+
+The project demonstrates both synchronous and asynchronous communication.
+
+#### Synchronous communication
+
+Order Service communicates with Product Service using REST when an immediate response is required.
+
+```text
+Order Service
+      │
+      │ REST
+      ▼
+Product Service
+```
+
+#### Asynchronous communication
+
+Kafka is used for event-driven communication where services do not need to wait for an immediate response.
+
+```text
+Order Service
+      │
+      │ Event
+      ▼
+    Kafka
+      │
+      ▼
+   Consumers
+```
+
 ### Kafka
 
 Kafka is used for **event-driven communication** between microservices.
 
+The project demonstrates concepts such as:
+
+* Producers
+* Consumers
+* Topics
+* Consumer groups
+* Partitions
+* Offsets
+* Asynchronous event processing
+
 ### Docker
 
 The services and supporting infrastructure can be containerized using Docker and Docker Compose.
+
+Docker is primarily used for local development and running the supporting infrastructure.
 
 ### Kubernetes
 
@@ -65,6 +230,9 @@ The application is deployed to Kubernetes using:
 * Services
 * NodePort services
 * Kubernetes configuration files
+* Kubernetes-based service discovery
+
+Kubernetes provides the orchestration layer for running the containerized microservices.
 
 ### Monitoring
 
@@ -105,18 +273,21 @@ The alert has been tested successfully using an intentional HTTP error and verif
 
 ## Technology Stack
 
-| Technology      | Purpose                         |
-| --------------- | ------------------------------- |
-| Java            | Backend development             |
-| Spring Boot     | Microservices framework         |
-| Spring Data JPA | Database access                 |
-| MySQL           | Relational database             |
-| Kafka           | Event-driven communication      |
-| Docker          | Containerization                |
-| Kubernetes      | Container orchestration         |
-| Prometheus      | Metrics collection              |
-| Grafana         | Monitoring and visualization    |
-| Maven           | Build and dependency management |
+| Technology           | Purpose                          |
+| -------------------- | -------------------------------- |
+| Java                 | Backend development              |
+| Spring Boot          | Microservices framework          |
+| Spring Data JPA      | Database access                  |
+| Spring Cloud Gateway | API Gateway and request routing  |
+| Spring Security      | Authentication and authorization |
+| Keycloak             | Identity and access management   |
+| MySQL                | Relational database              |
+| Kafka                | Event-driven communication       |
+| Docker               | Containerization                 |
+| Kubernetes           | Container orchestration          |
+| Prometheus           | Metrics collection               |
+| Grafana              | Monitoring and visualization     |
+| Maven                | Build and dependency management  |
 
 ## Project Structure
 
@@ -132,6 +303,11 @@ springboot-microservices/
 │   ├── src/
 │   ├── Dockerfile
 │   └── pom.xml
+│
+├── api-gateway/
+│   ├── src/
+│   ├── pom.xml
+│   └── ...
 │
 ├── kubernetes/
 │   ├── product-service/
@@ -198,17 +374,53 @@ Grafana
 Alerts
 ```
 
+## Security Flow
+
+The authentication and authorization flow is:
+
+```text
+Client
+   │
+   │ Login
+   ▼
+Keycloak
+   │
+   │ JWT Access Token
+   ▼
+Client
+   │
+   │ Authorization: Bearer <JWT>
+   ▼
+API Gateway
+   │
+   ├── Validate JWT
+   │
+   ├── Extract roles
+   │
+   ├── Authenticate request
+   │
+   └── Authorize request
+   │
+   ▼
+Microservices
+```
+
 ## Project Goals
 
 This project is being built incrementally to gain practical experience with:
 
 * Microservice development
 * REST API design
-* Database integration
+* Synchronous service-to-service communication
 * Event-driven architecture
 * Kafka
+* API Gateway
+* Authentication and authorization
+* JWT
+* Keycloak
 * Docker
 * Kubernetes
+* Kubernetes service discovery
 * Application monitoring
 * Prometheus
 * Grafana
